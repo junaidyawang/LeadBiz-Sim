@@ -1699,6 +1699,25 @@ function facToggle(what) { if (what === 'names') FAC.hideNames = !FAC.hideNames;
 function facTab(i) { FAC.tab = i; facRender(); }
 function facExpand(key) { FAC.expanded = FAC.expanded === key ? null : key; facRender(); }
 
+
+/* Facilitator only: the strongest action at each stage and why. Never shown to pairs. */
+const FAC_INSIGHT = {
+  S1: { best: 'B', why: 'Finding where requests wait gives the team a clear target before any effort is spent.',
+    notes: { A: 'Clears some urgent work quickly, but tired people and returning delays cost workload and resources.', B: 'Builds understanding at low cost and lifts all four indicators.', C: 'Speeds urgent cases, but routine work slips and the delay moves elsewhere.' } },
+  S2: { best: 'B', why: 'It targets the real delay, waiting for approval, while keeping the checks that must stay.',
+    notes: { A: 'Pushes people harder in steps where the delay is not.', B: 'Removes unnecessary waiting and improves service and delivery together.', C: 'Shows status more clearly, but costs resources and leaves the wait in place.' } },
+  S3: { best: 'B', why: 'A checklist at the start prevents missing details, so less work is repeated later.',
+    notes: { A: 'Catches errors at the end, after the effort has already been spent.', B: 'Prevents repeat problems and gives the strongest gain in reliable delivery.', C: 'A large change too soon. Training and setup slow the team and strain resources.' } },
+  S4: { best: 'B', why: 'Clear owners and weekly follow up bring problems to light early.',
+    notes: { A: 'A reminder does not settle who owns the handover, so workload and delivery suffer.', B: 'Gives clear roles and steady progress, with the best result for delivery.', C: 'Escalating to senior management slows decisions and uses more resources.' } },
+  S5: { best: 'B', why: 'Comparing waiting time, repeat work and on time results with before shows what really changed.',
+    notes: { A: 'Shows how busy the team was, not whether service improved.', B: 'Gives evidence for the next decision and supports reliable delivery.', C: 'Customer comments add colour, but numbers are needed to see the wider pattern.' } }
+};
+function facImpactWords(stageId, choiceId) {
+  const d = IC_DELTAS[stageId][choiceId];
+  return IC_INDICATORS.map(function (ind, k) { return ind.name + ' ' + icMove(d[k]).text.toLowerCase(); }).join(', ');
+}
+
 function facTeams() {
   const teams = (FAC.data && FAC.data.teams) || {};
   return Object.keys(teams).map(function (k) { return Object.assign({ key: k }, teams[k]); })
@@ -1754,7 +1773,25 @@ function facDashHtml() {
         '<div class="fac-meter" role="img" aria-label="Choice ' + ch.id + ': ' + n + ' pairs"><span style="width:' + pct + '%"></span><em>' + n + '</em></div></div>';
     }).join('');
   }
+  const fi = FAC_INSIGHT[st.id];
+  html += '<div class="fac-lesson" style="border-left-color:var(--navy); color:var(--ink);"><strong>What each choice did to the team</strong><ul style="margin:0.4rem 0 0.6rem 1.1rem; padding:0;">' + st.choices.map(function (ch) {
+    return '<li><strong>' + ch.id + (ch.id === fi.best ? ' (strongest)' : '') + ':</strong> ' + fi.notes[ch.id] + ' <em>' + facImpactWords(st.id, ch.id) + '.</em></li>';
+  }).join('') + '</ul><strong>Why ' + fi.best + ' is strongest:</strong> ' + fi.why + '</div>';
   html += '<div class="fac-lesson"><strong>Day 2 link:</strong> ' + st.daylink + '. <strong>Plain lesson:</strong> ' + st.lesson + '</div></div>';
+
+  // Class impact
+  const fins = teams.filter(function (t) { return facDecisionCount(t) === IC_STAGES.length; });
+  html += '<div class="card"><span class="badge">Class impact</span>';
+  if (!fins.length) html += '<div class="ic-note" style="margin-top:0.6rem;">Class results appear when the first pair finishes all five decisions.</div>';
+  else {
+    html += '<p style="margin:0.6rem 0 0.4rem;">Results from ' + fins.length + ' finished pair' + (fins.length > 1 ? 's' : '') + '. These are simulation indicators for discussion.</p><div class="fac-row head" style="grid-template-columns:1.4fr 1fr 1fr 1fr;"><span>Indicator</span><span>Improved</span><span>About the same</span><span>Needs attention</span></div>';
+    IC_INDICATORS.forEach(function (ind, k) {
+      const c = { 'Improved': 0, 'About the same': 0, 'Needs attention': 0 };
+      fins.forEach(function (t) { c[icLabel(icState(t.decisions || {})[k] - IC_START).text]++; });
+      html += '<div class="fac-row" style="grid-template-columns:1.4fr 1fr 1fr 1fr; cursor:default;"><span><strong>' + ind.name + '</strong></span><span>' + c['Improved'] + '</span><span>' + c['About the same'] + '</span><span>' + c['Needs attention'] + '</span></div>';
+    });
+  }
+  html += '</div>';
 
   // Progress panel
   html += '<div class="card"><span class="badge">Progress</span>' +
