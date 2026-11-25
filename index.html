@@ -4191,12 +4191,38 @@ function facEnter(code, hash) {
   if (FAC.timer) clearInterval(FAC.timer);
   FAC.timer = setInterval(facPoll, 3000);
 }
+/* Scroll safe polling: the dashboard is only redrawn when the data really changed (lastSeen heartbeats ignored),
+   or about every 30 seconds to refresh the "answering now" status, and never while the facilitator is touching or scrolling. */
+FAC.sig = ''; FAC.lastDraw = 0; FAC.touching = false; FAC.lastScroll = 0; FAC.dirty = false;
+(function facScrollGuard() {
+  window.addEventListener('touchstart', function () { FAC.touching = true; }, { passive: true });
+  window.addEventListener('touchend', function () { FAC.touching = false; FAC.lastScroll = Date.now(); }, { passive: true });
+  window.addEventListener('touchcancel', function () { FAC.touching = false; FAC.lastScroll = Date.now(); }, { passive: true });
+  window.addEventListener('scroll', function () { FAC.lastScroll = Date.now(); }, { passive: true });
+  window.addEventListener('wheel', function () { FAC.lastScroll = Date.now(); }, { passive: true });
+})();
+function facBusy() { return FAC.touching || (Date.now() - FAC.lastScroll) < 1200; }
+function facSignature(d) {
+  try { return JSON.stringify(d, function (k, v) { return k === 'lastSeen' ? undefined : v; }); } catch (e) { return String(Date.now()); }
+}
 async function facPoll() {
   if (FAC.view !== 'dash' || !FAC.code) return;
   const res = await ICNet.call(FAC.code, 'GET');
-  if (!res.ok) { FAC.offline = true; } else { FAC.offline = false; FAC.data = res.data || { meta: {}, teams: {} }; }
+  let changed = false;
+  if (!res.ok) {
+    if (!FAC.offline) changed = true;
+    FAC.offline = true;
+  } else {
+    const next = res.data || { meta: {}, teams: {} };
+    const sig = facSignature(next);
+    if (FAC.offline || sig !== FAC.sig || !FAC.lastDraw) changed = true;
+    FAC.offline = false; FAC.data = next; FAC.sig = sig;
+  }
+  if (!changed && (Date.now() - FAC.lastDraw) > 30000) changed = true;
+  if (!changed && !FAC.dirty) return;
+  if (facBusy()) { FAC.dirty = true; return; }
   const host = document.getElementById('app-facilitator');
-  if (host && host.style.display !== 'none') facRender();
+  if (host && host.style.display !== 'none') { FAC.dirty = false; facRender(); }
 }
 function facNewClass() {
   if (FAC.timer) { clearInterval(FAC.timer); FAC.timer = null; }
@@ -4480,7 +4506,8 @@ function facRender() {
     else {
       const y = window.scrollY;
       main.innerHTML = facDashHtml();
-      window.scrollTo(0, y);
+      FAC.lastDraw = Date.now();
+      if (Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y);
     }
     if (chip) { chip.style.display = 'inline-block'; chip.innerHTML = '<small>Class</small>' + escapeHtml(FAC.code); }
   } else {
